@@ -1,5 +1,6 @@
 const express = require("express");
 const User = require("../models/user");
+const Blog = require("../models/blog");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const auth = require("../middleware/auth");
@@ -75,6 +76,7 @@ router.put("/users/:id", async (req, res) => {
   }
 });
 
+// Login
 router.post("/login", async (req, res) => {
   // Our login logic starts here
   try {
@@ -96,6 +98,79 @@ router.post("/login", async (req, res) => {
     return res.status(400).send("Invalid Credentials");
   } catch (err) {
     console.log(err);
+  }
+});
+
+// Follow a User
+router.post("/follow/:userId", auth, async (req, res) => {
+  const followerId = req.user.user_id; // Current user ID (follower)
+  const bloggerId = req.params.userId; // ID of the blogger to be followed
+
+  try {
+    // Check if the blogger to be followed exists
+    const blogger = await User.findById(bloggerId);
+    if (!blogger) {
+      return res.status(404).json({ message: "Blogger not found" });
+    }
+
+    // Check if the user is trying to follow themselves
+    if (followerId.toString() === bloggerId) {
+      return res.status(400).json({ message: "You cannot follow yourself" });
+    }
+
+    // Check if the user is already following the blogger
+    if (blogger.followers.includes(followerId)) {
+      return res
+        .status(400)
+        .json({ message: "You are already following this blogger" });
+    }
+
+    // Update the blogger's followers list
+    blogger.followers.push(followerId);
+    await blogger.save();
+
+    // Update the follower's following list
+    const follower = await User.findById(followerId);
+    follower.following.push(bloggerId);
+    await follower.save();
+
+    res.json({ message: "You are now following the blogger" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Get User Feed
+router.get("/feed", auth, async (req, res) => {
+  const userId = req.user.user_id; // Current user ID
+
+  try {
+    // Find the current user to get the list of followed bloggers
+    const currentUser = await User.findById(userId);
+
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Extract blogger IDs from the following list
+    const bloggerIds = currentUser.following;
+
+    // Ensure bloggerIds is an array and not empty
+    if (!Array.isArray(bloggerIds) || bloggerIds.length === 0) {
+      return res
+        .status(200)
+        .json({ message: "User is not following any bloggers", feed: [] });
+    }
+
+    const feed = await Blog.find({ created_by: { $in: bloggerIds } })
+      .sort({ created_at: -1 })
+      .populate("created_by", "username");
+
+    res.json(feed);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 

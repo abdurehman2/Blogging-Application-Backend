@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const Blog = require("../models/blog");
 const router = express.Router();
 
+// Create a new Blog Post
 router.post("/posts", auth, async (req, res) => {
   const { title, description } = req.body;
   const newBlog = new Blog({
@@ -22,10 +23,26 @@ router.post("/posts", auth, async (req, res) => {
   }
 });
 
-// Retrieve all blogs
+//Retrieve all blogs
 router.get("/posts", async (req, res) => {
   try {
-    const posts = await Blog.find().sort({ created_at: -1 });
+    let query = {};
+
+    // Filtering by user
+    if (req.query.user) {
+      // Convert the user ID to a Mongoose ObjectId
+      const userId = new mongoose.Types.ObjectId(req.query.user);
+      query.created_by = userId;
+    }
+
+    // Sorting by date
+    let sortOption = { created_at: -1 }; // Default sorting: latest first
+    if (req.query.sort === "oldest") {
+      sortOption = { created_at: 1 }; // Sorting: oldest first
+    }
+
+    const posts = await Blog.find(query).sort(sortOption);
+
     res.json(posts);
   } catch (error) {
     console.error(error);
@@ -45,7 +62,7 @@ router.get("/posts/:postId", async (req, res) => {
   }
 });
 
-//Pagination
+// Pagination;
 router.get("/posts", async (req, res) => {
   try {
     let { page, size, title } = req.query;
@@ -69,6 +86,7 @@ router.get("/posts", async (req, res) => {
   }
 });
 
+// Update Blog Post
 router.put("/posts/:postId", auth, async (req, res) => {
   const postId = req.params.postId;
   const { title, description } = req.body;
