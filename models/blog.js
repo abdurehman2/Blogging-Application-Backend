@@ -21,6 +21,10 @@ const blogSchema = new mongoose.Schema({
   },
   comments: [commentSchema],
   ratings: [ratingSchema],
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const Blog = mongoose.model("Blog", blogSchema);

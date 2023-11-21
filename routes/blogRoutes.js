@@ -55,7 +55,11 @@ router.get("/posts/:postId", async (req, res) => {
   const postID = req.params.postId;
   try {
     const post = await Blog.findById(postID);
-    res.json(post);
+    if (!post.disabled) {
+      res.json(post);
+    } else {
+      res.send("Couldn't get post");
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal Server Error" });
@@ -156,7 +160,17 @@ router.post("/posts/:postId/comments", auth, async (req, res) => {
     const blogPost = await Blog.findById(req.params.postId);
     blogPost.comments.push(comment);
     await blogPost.save();
-    console.log(comment);
+
+    const notification = new Notification({
+      type: "comment",
+      message: `${req.user.username} commented on your post: ${text}`,
+    });
+
+    // Save the notification and add its reference to the post owner's notifications array
+    await notification.save();
+    post.created_by.notifications.push(notification._id);
+    await post.created_by.save();
+
     res.json({ message: "Comment added successfully", comment });
   } catch (error) {
     console.error(error);
@@ -175,6 +189,47 @@ router.post("/posts/:postId/ratings", auth, async (req, res) => {
     await blogPost.save();
 
     res.json({ message: "Rating added successfully", rating });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Endpoint for searching blog posts
+router.get("/search", async (req, res) => {
+  const { keywords, categories, author } = req.query;
+
+  try {
+    let query = {};
+
+    // Add search criteria based on query parameters
+    if (keywords) {
+      query.$or = [
+        { title: { $regex: keywords, $options: "i" } }, // Case-insensitive search in the title
+        { description: { $regex: keywords, $options: "i" } }, // Case-insensitive search in the description
+      ];
+    }
+
+    if (categories) {
+      query.categories = { $in: categories.split(",") }; // Assuming categories are comma-separated
+    }
+
+    if (author) {
+      query.created_by = author; // Assuming author is the user ID
+    }
+
+    // Sort options
+    let sortOptions = {};
+    if (sortBy) {
+      sortOptions[sortBy] = sortOrder === "desc" ? -1 : 1;
+    } else {
+      // Default sorting (by created_at in descending order)
+      sortOptions.created_at = -1;
+    }
+
+    const searchResults = await Blog.find(query).sort(sortOptions);
+
+    res.json(searchResults);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal Server Error" });

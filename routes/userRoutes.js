@@ -1,6 +1,7 @@
 const express = require("express");
 const User = require("../models/user");
 const Blog = require("../models/blog");
+const Notification = require("../models/notification");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const auth = require("../middleware/auth");
@@ -89,6 +90,9 @@ router.post("/login", async (req, res) => {
     // Validate if user exist in our database
     const user = await User.findOne({ email });
     if (user) {
+      if (user.status === "blocked") {
+        return res.status(400).send("You've been blocked");
+      }
       const token = jwt.sign({ user_id: user._id, email }, config.TOKEN_KEY, {
         expiresIn: "2h",
       });
@@ -134,6 +138,17 @@ router.post("/follow/:userId", auth, async (req, res) => {
     follower.following.push(bloggerId);
     await follower.save();
 
+    // Create a new follow notification
+    const notification = new Notification({
+      type: "follow",
+      message: `${req.user.username} started following you.`,
+    });
+
+    // Save the notification and add its reference to the user's notifications array
+    await notification.save();
+    blogger.notifications.push(notification._id);
+    await blogger.save();
+
     res.json({ message: "You are now following the blogger" });
   } catch (error) {
     console.error(error);
@@ -168,6 +183,25 @@ router.get("/feed", auth, async (req, res) => {
       .populate("created_by", "username");
 
     res.json(feed);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+// Endpoint to retrieve notifications for the current user
+router.get("/notifications", auth, async (req, res) => {
+  const userId = req.user.user_id; // Current user ID
+
+  try {
+    // Find the current user to get their notifications
+    const user = await User.findById(userId).populate("notifications");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user.notifications);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Internal Server Error" });
